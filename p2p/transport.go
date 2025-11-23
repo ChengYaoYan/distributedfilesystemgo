@@ -7,4 +7,6 @@ type Peer interface {
 type Transport interface {
 	ListenAndAccept() error
 	Consume() <-chan RPC
+	Dial() error
+	Close() error
 }
