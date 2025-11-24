@@ -1,30 +1,39 @@
 package main
 
 import (
-	"fmt"
 	"log"
 
 	"github.com/ChengYaoYan/distributedfilesystemgo/p2p"
 )
 
-func main() {
-	tcpOpts := p2p.TCPTransportOpts{
-		ListenAddr:    ":4000",
+func makeServer(listenAddr string, nodes ...string) *FileServer {
+	tcpTransportopts := p2p.TCPTransportOpts{
+		ListenAddr:    listenAddr,
 		HandshakeFunc: p2p.NOPHandshakeFunc,
 		Decoder:       p2p.DefaultDecoder{},
 	}
-	tcp := p2p.NewTCPTransport(tcpOpts)
+	tcpTransport := p2p.NewTCPTransport(tcpTransportopts)
 
-	go func() {
-		for {
-			msg := <-tcp.Consume()
-			fmt.Printf("%+v\n", msg)
-		}
-	}()
-
-	if err := tcp.ListenAndAccept(); err != nil {
-		log.Fatal(err)
+	fileServerOpts := FileServerOpts{
+		ListenAddr:            listenAddr,
+		PathTransformFunc:     GASPathTransformFunc,
+		Transport:             *tcpTransport,
+		bootstrapNetworkNodes: nodes,
 	}
 
-	select {}
+	s := NewFileServer(fileServerOpts)
+	tcpTransport.OnPeer = s.OnPeer
+
+	return s
+}
+
+func main() {
+	s1 := makeServer(":3000", "")
+	s2 := makeServer(":4000", ":3000")
+
+	go func() {
+		log.Fatal(s1.Start())
+	}()
+
+	s2.Start()
 }
