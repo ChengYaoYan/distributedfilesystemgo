@@ -34,9 +34,10 @@ func main() {
 	s2 := makeServer(":4000", ":3000")
 
 	go func() {
-		log.Fatal(s1.Start())
+		log.Println(s1.Start())
 	}()
 
+	time.Sleep(1 * time.Second)
 	go s2.Start()
 	time.Sleep(1 * time.Second)
 

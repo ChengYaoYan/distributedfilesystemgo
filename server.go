@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"sync"
 
 	"github.com/ChengYaoYan/distributedfilesystemgo/p2p"
@@ -22,7 +23,7 @@ type FileServer struct {
 	FileServerOpts FileServerOpts
 
 	peerLock sync.Mutex
-	peers    map[string]p2p.Peer
+	peers    map[net.Addr]p2p.Peer
 
 	Store  *Store
 	quitch chan struct{}
@@ -35,7 +36,7 @@ func NewFileServer(opts FileServerOpts) *FileServer {
 		FileServerOpts: opts,
 		Store:          NewStore(storeOpts),
 		quitch:         make(chan struct{}),
-		peers:          make(map[string]p2p.Peer),
+		peers:          make(map[net.Addr]p2p.Peer),
 	}
 }
 
@@ -55,13 +56,10 @@ func (fs *FileServer) broadcast(p Payload) error {
 }
 
 func (fs *FileServer) StoreData(key string, r io.Reader) error {
-	if err := fs.Store.Write(key, r); err != nil {
-		return err
-	}
-
 	buf := new(bytes.Buffer)
-	_, err := io.Copy(buf, r)
-	if err != nil {
+	tee := io.TeeReader(r, buf)
+
+	if err := fs.Store.Write(key, tee); err != nil {
 		return err
 	}
 
@@ -70,7 +68,7 @@ func (fs *FileServer) StoreData(key string, r io.Reader) error {
 		data: buf.Bytes(),
 	}
 
-	fmt.Println(buf.Bytes())
+	fmt.Println(fs.FileServerOpts.Transport.TCPTransportOpts.ListenAddr, buf.Bytes())
 
 	return fs.broadcast(p)
 }
@@ -83,7 +81,7 @@ func (fs *FileServer) OnPeer(p p2p.Peer) error {
 	fs.peerLock.Lock()
 	defer fs.peerLock.Unlock()
 
-	fs.peers[p.RemoteAddr().String()] = p
+	fs.peers[p.RemoteAddr()] = p
 
 	log.Println("connect with remote: ", p.RemoteAddr())
 
@@ -98,8 +96,17 @@ func (fs *FileServer) Loop() {
 
 	for {
 		select {
-		case msg := <-fs.FileServerOpts.Transport.Consume():
-			fmt.Println(msg)
+		case rpc := <-fs.FileServerOpts.Transport.Consume():
+			var p Payload
+			if err := gob.NewDecoder(bytes.NewReader(rpc.Payload)).Decode(&p); err != nil {
+				if peer, ok := fs.peers[rpc.From]; !ok {
+					panic("peer not fuond in peers")
+				} else {
+					fmt.Println("broadcast", peer, p.data)
+				}
+
+				log.Fatal(err)
+			}
 		case <-fs.quitch:
 			return
 		}
@@ -117,7 +124,6 @@ func (fs *FileServer) BootstrapNetwork() error {
 			if err := fs.FileServerOpts.Transport.Dial(addr); err != nil {
 				log.Println("dial err: ", err)
 			}
-
 		}(addr)
 	}
 

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"time"
 )
 
 type TCPPeer struct {
@@ -83,6 +84,7 @@ func (t *TCPTransport) startAcceptLoop() {
 		}
 
 		log.Println("new incoming connection ", conn)
+		time.Sleep(1 * time.Second)
 
 		go t.handleConn(conn, true)
 	}
@@ -113,12 +115,16 @@ func (t *TCPTransport) handleConn(conn net.Conn, outbood bool) error {
 
 	rpc := RPC{}
 	for {
-		if err := t.Decoder.Decode(conn, &rpc); err != nil {
-			fmt.Printf("TCP error: %s\n", err)
-			continue
+		fmt.Println("hello")
+		err := t.Decoder.Decode(conn, &rpc)
+		if err != nil {
+			log.Printf("TCP error: %s\n", err)
 		}
 
+		fmt.Println("rpc", rpc)
+
 		rpc.From = conn.RemoteAddr()
+		log.Println("remote", rpc.From)
 		t.rpcch <- rpc
 	}
 }
